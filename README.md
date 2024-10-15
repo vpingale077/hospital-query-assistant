@@ -47,7 +47,7 @@ The frontend is built using Gradio, providing a web-based user interface. Featur
 
 1. Clone the repository:
    ```
-   git clone https://github.com/vpingale07/hospital-query-assistant.git
+   git clone https://github.com/vpingale077/hospital-query-assistant.git
    ```
 
 2. Install required dependencies:
