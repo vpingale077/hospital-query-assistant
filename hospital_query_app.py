@@ -12,45 +12,52 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Load environment variables
 load_dotenv()
 
-# Set up GroqCloud client
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-if not GROQ_API_KEY:
-    raise ValueError("GROQ_API_KEY not found in environment variables")
+# Initialize GroqCloud client and agents
+groq_client = None
+GROQ_API_KEY = None
+user_proxy = None
+hospital_assistant = None
 
-groq_client = Groq(api_key=GROQ_API_KEY)
+def set_groq_api_key(api_key: str):
+    global groq_client, GROQ_API_KEY, user_proxy, hospital_assistant
+    GROQ_API_KEY = api_key
+    groq_client = Groq(api_key=GROQ_API_KEY)
+    os.environ["OPENAI_API_KEY"] = GROQ_API_KEY  # Set the environment variable for OpenAI compatibility
 
-# Disable Docker for code execution
-code_execution_config = {"use_docker": False}
+    # Configuration for AutoGen agents
+    config_list = [
+        {
+            "model": "mixtral-8x7b-32768",
+            "api_key": GROQ_API_KEY,
+        }
+    ]
 
-# Configuration for AutoGen agents
-config_list = [
-    {
-        "model": "mixtral-8x7b-32768",
-        "api_key": GROQ_API_KEY,
+    llm_config = {
+        "config_list": config_list,
+        "cache_seed": 42,
+        "temperature": 0.5,
+        "base_url": "https://api.groq.com/openai/v1",
     }
-]
 
-llm_config = {
-    "config_list": config_list,
-    "cache_seed": 42,
-    "temperature": 0.5,
-    "base_url": "https://api.groq.com/openai/v1",
-}
+    # Disable Docker for code execution
+    code_execution_config = {"use_docker": False}
 
-# User Proxy Agent
-user_proxy = autogen.UserProxyAgent(
-    name="User_Proxy",
-    system_message="A human user interacting with the hospital query system.",
-    human_input_mode="NEVER",
-    code_execution_config=code_execution_config,
-)
+    # Create User Proxy Agent
+    user_proxy = autogen.UserProxyAgent(
+        name="User_Proxy",
+        system_message="A human user interacting with the hospital query system.",
+        human_input_mode="NEVER",
+        code_execution_config=code_execution_config,
+    )
 
-# Hospital Query Assistant
-hospital_assistant = autogen.AssistantAgent(
-    name="Hospital_Assistant",
-    system_message="You are a hospital assistant AI. You help users with their queries about hospital services, appointments, and general medical information. Provide concise and helpful responses. Do not provide any personal medical advice or diagnoses.",
-    llm_config=llm_config,
-)
+    # Create Hospital Query Assistant
+    hospital_assistant = autogen.AssistantAgent(
+        name="Hospital_Assistant",
+        system_message="You are a hospital assistant AI. You help users with their queries about hospital services, appointments, and general medical information. Provide concise and helpful responses. Do not provide any personal medical advice or diagnoses.",
+        llm_config=llm_config,
+    )
+
+    logging.info("AutoGen agents created successfully with the provided API key.")
 
 # Define LLAMA_GUARD_PROMPT
 LLAMA_GUARD_PROMPT = """
@@ -91,6 +98,13 @@ def moderate_content(text: str) -> Dict[str, Any]:
         return {"is_safe": False, "explanation": "Error in content moderation", "tokens_used": 0}
 
 def handle_hospital_query(user_input: str) -> Dict[str, Any]:
+    global groq_client, GROQ_API_KEY, user_proxy, hospital_assistant
+    if not groq_client or not GROQ_API_KEY or not user_proxy or not hospital_assistant:
+        return {
+            "response": "Please enter your GROQ API key in the input field above.",
+            "tokens_used": 0
+        }
+    
     try:
         sanitized_input = sanitize_input(user_input)
         
@@ -120,13 +134,15 @@ def handle_hospital_query(user_input: str) -> Dict[str, Any]:
     except Exception as e:
         logging.error(f"Error in handling hospital query: {str(e)}")
         return {
-            "response": "I apologize, but I encountered an error while processing your query. Please try again later.",
+            "response": f"I apologize, but I encountered an error while processing your query: {str(e)}. Please try again later.",
             "tokens_used": 0
         }
 
 # Main application loop (if running directly)
 if __name__ == "__main__":
     print("Welcome to the Hospital Query System. Type 'exit' to quit.")
+    api_key = input("Please enter your GROQ API key: ")
+    set_groq_api_key(api_key)
     total_tokens = 0
     while True:
         try:
